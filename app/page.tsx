@@ -29,8 +29,8 @@ function PosterImage({ title }: { title: string }) {
   }, [title]);
   return image ? <img src={image} alt={`${title} poster`} /> : null;
 }
-function Cover({ title, meta, score, tone, onClick }: { title: string; meta: string; score: string; tone: string; onClick?: () => void }) {
-  return <button className={`cover ${tone}`} onClick={onClick}><PosterImage title={title}/><span className="cover-type">{meta.includes("Series") ? "Series" : "Movie"}</span><span className="cover-score">★ {score}</span><span className="cover-title"><small>{meta}</small>{title}</span></button>;
+function Cover({ title, meta, score, tone, onClick }: { title: string; meta: string; score: string; tone: string; onClick?: (title: string, meta: string, score: string) => void }) {
+  return <button className={`cover ${tone}`} onClick={() => onClick?.(title, meta, score)}><PosterImage title={title}/><span className="cover-type">{meta.includes("Series") ? "Series" : "Movie"}</span><span className="cover-score">★ {score}</span><span className="cover-title"><small>{meta}</small>{title}</span></button>;
 }
 
 export default function Home() {
