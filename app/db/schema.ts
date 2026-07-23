@@ -7,6 +7,7 @@ const timestamps = {
 
 export const titleType = pgEnum("title_type", ["movie", "tv"]);
 export const recommendationStatus = pgEnum("recommendation_status", ["pending", "watching", "watched", "not_interested"]);
+export const libraryStatus = pgEnum("library_status", ["watchlist", "watching", "completed"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -27,6 +28,13 @@ export const titles = pgTable("titles", {
   posterPath: text("poster_path"),
   ...timestamps,
 }, (table) => [uniqueIndex("titles_tmdb_type_unique").on(table.tmdbId, table.type)]);
+
+export const userTitleStates = pgTable("user_title_states", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  titleId: uuid("title_id").notNull().references(() => titles.id, { onDelete: "cascade" }),
+  status: libraryStatus("status").notNull(),
+  ...timestamps,
+}, (table) => [primaryKey({ columns: [table.userId, table.titleId] })]);
 
 export const friendships = pgTable("friendships", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

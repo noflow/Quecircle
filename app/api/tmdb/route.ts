@@ -12,6 +12,7 @@ type SearchItem = {
   first_air_date?: string;
   known_for_department?: string;
   known_for?: Array<{ title?: string; name?: string }>;
+  vote_average?: number;
 };
 
 const poster = (path?: string | null, size = "w500") => path ? `${IMAGE_BASE}/${size}${path}` : null;
@@ -26,6 +27,20 @@ export async function GET(request: Request) {
   if (!token) return Response.json({ configured: false, image: null });
 
   try {
+    if (mode === "home") {
+      const headers = { Authorization: `Bearer ${token}`, accept: "application/json" };
+      const [moviesResponse, showsResponse] = await Promise.all([
+        fetch(`${API_BASE}/movie/now_playing?language=en-US&page=1`, { headers, next: { revalidate: 60 * 60 * 6 } }),
+        fetch(`${API_BASE}/tv/on_the_air?language=en-US&page=1`, { headers, next: { revalidate: 60 * 60 * 6 } }),
+      ]);
+      if (!moviesResponse.ok || !showsResponse.ok) return Response.json({ movies: [], shows: [] }, { status: 502 });
+      const [moviesData, showsData] = await Promise.all([moviesResponse.json() as Promise<{ results?: SearchItem[] }>, showsResponse.json() as Promise<{ results?: SearchItem[] }>]);
+      const format = (items: SearchItem[], type: "movie" | "tv") => items.filter(item => item.poster_path).slice(0, 8).map(item => ({
+        id: item.id, type, title: item.title ?? item.name ?? "Untitled", year: item.release_date?.slice(0, 4) ?? item.first_air_date?.slice(0, 4) ?? null,
+        image: poster(item.poster_path), score: item.vote_average ? item.vote_average.toFixed(1) : "—",
+      }));
+      return Response.json({ movies: format(moviesData.results ?? [], "movie"), shows: format(showsData.results ?? [], "tv") }, { headers: { "Cache-Control": "public, max-age=900, s-maxage=21600" } });
+    }
     if (id) {
       const response = await fetch(`${API_BASE}/${type}/${id}?language=en-US&append_to_response=credits,videos,watch/providers`, {
         headers: { Authorization: `Bearer ${token}`, accept: "application/json" },
