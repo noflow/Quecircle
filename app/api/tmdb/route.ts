@@ -41,6 +41,22 @@ export async function GET(request: Request) {
       }));
       return Response.json({ movies: format(moviesData.results ?? [], "movie"), shows: format(showsData.results ?? [], "tv") }, { headers: { "Cache-Control": "public, max-age=900, s-maxage=21600" } });
     }
+    if (mode === "discover") {
+      const requestedType = params.get("type");
+      const headers = { Authorization: `Bearer ${token}`, accept: "application/json" };
+      const endpoints = requestedType === "movie" ? [{ path: "/movie/popular", type: "movie" as const }]
+        : requestedType === "tv" ? [{ path: "/tv/popular", type: "tv" as const }]
+        : [{ path: "/trending/movie/week", type: "movie" as const }, { path: "/trending/tv/week", type: "tv" as const }];
+      const responses = await Promise.all(endpoints.map(async endpoint => ({ endpoint, response: await fetch(`${API_BASE}${endpoint.path}?language=en-US&page=1`, { headers, next: { revalidate: 60 * 60 * 6 } }) })));
+      if (responses.some(({ response }) => !response.ok)) return Response.json({ titles: [] }, { status: 502 });
+      const collections = await Promise.all(responses.map(async ({ endpoint, response }) => ({ type: endpoint.type, items: (await response.json() as { results?: SearchItem[] }).results ?? [] })));
+      const titles = collections.flatMap(collection => collection.items.filter(item => item.poster_path).slice(0, 20).map(item => ({
+        id: item.id, type: collection.type, title: item.title ?? item.name ?? "Untitled",
+        year: item.release_date?.slice(0, 4) ?? item.first_air_date?.slice(0, 4) ?? null,
+        image: poster(item.poster_path), score: item.vote_average ? item.vote_average.toFixed(1) : "—",
+      }))).sort((a, b) => Number(b.score) - Number(a.score));
+      return Response.json({ titles: titles.slice(0, 24) }, { headers: { "Cache-Control": "public, max-age=900, s-maxage=21600" } });
+    }
     if (id) {
       const response = await fetch(`${API_BASE}/${type}/${id}?language=en-US&append_to_response=credits,videos,watch/providers`, {
         headers: { Authorization: `Bearer ${token}`, accept: "application/json" },
