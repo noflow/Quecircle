@@ -34,6 +34,7 @@ function Cover({ title, meta, score, tone, onClick }: { title: string; meta: str
 }
 
 export default function Home() {
+  const { isLoaded, isSignedIn } = useUser();
   const [page, setPage] = useState<Page>("Home");
   const [modal, setModal] = useState<"recommend" | "rate" | null>(null);
   const [toast, setToast] = useState("");
@@ -46,6 +47,8 @@ export default function Home() {
 
   const movieCards = (limit = 4) => <div className="cards">{titles.slice(0, limit).map(([title, meta, score, tone, note]) => <div className="media-card" key={title}><Cover title={title} meta={meta} score={score} tone={tone} onClick={openTitle}/><strong>{title}</strong><span>{note}</span></div>)}</div>;
   const recommend = () => <button className="primary" onClick={() => setModal("recommend")}>+ Recommend</button>;
+
+  if (!isLoaded || !isSignedIn) return <LandingPage />;
 
   return <div className="app-shell">
     <aside className="sidebar"><button className="brand" onClick={() => setPage("Home")}><i></i>CineApe</button><p>MENU</p><nav>{nav.map((item, index) => <button key={item} className={shown === item ? "active" : ""} onClick={() => setPage(item)}><span>{["⌂", "⌕", "✦", "♧", "◉"][index]}</span>{item}{item === "For You" && <b>3</b>}</button>)}</nav><div className="account"><Avatar>SB</Avatar><div><strong>Shawn Baker</strong><span>Free plan</span></div></div></aside>
@@ -63,12 +66,7 @@ export default function Home() {
 
     {page === "My Profile" && <section className="page"><div className="panel profile-head"><Avatar>SB</Avatar><div><h1>Shawn Baker</h1><p>Drama seeker · 38 ratings · Member since 2025</p></div><div className="profile-stats"><b>87%<span>Circle match</span></b><b>26<span>Recommendations sent</span></b><b>8.4<span>Average rating</span></b></div></div><div className="profile-grid"><div className="panel taste"><h2>Your taste profile</h2><p>Built from what you watch, rate, and save.</p>{[["Drama", "93"], ["Sci-fi", "84"], ["Comedy", "71"], ["Thriller", "67"], ["Horror", "33"]].map(([name, value]) => <div className="bar-row" key={name}><span>{name}</span><i><b style={{width:`${value}%`}}></b></i><strong>{value}</strong></div>)}</div><div className="panel accuracy"><h2>Recommendation accuracy</h2><p>Who knows your taste best?</p><Friend name="Maya Reynolds" initials="MR" match="92%"/><Friend name="John Baker" initials="JB" match="87%" tone="blue-tone"/><Friend name="Sarah Kim" initials="SK" match="81%" tone="rose-tone"/></div></div></section>}
     </main>
-    <footer className="tmdb-attribution" aria-label="TMDB attribution">
-      <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer">
-        <img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB" />
-      </a>
-      <p>This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.</p>
-    </footer>
+    <TmdbAttribution />
     <div className="auth-float"><AccountControls /></div>
     {modal && <div className="backdrop" onClick={() => setModal(null)}><div className="modal" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setModal(null)}>×</button>{modal === "recommend" ? <><h2>Send a recommendation</h2><p>Make it personal. Great picks deserve a note.</p><div className="selected-title"><span></span><b>Mickey 17<small>2025 · Science fiction</small></b></div><label>SEND TO</label><div className="recipients">{["Maya", "John", "Sarah"].map(name => <button className={recipient === name ? "chosen" : ""} key={name} onClick={() => setRecipient(name)}>{name}</button>)}</div><label>ADD A NOTE <small>(optional)</small></label><textarea placeholder="Why will they love it?"></textarea><button className="primary wide" onClick={() => {setModal(null);flash(`Recommendation sent to ${recipient} ✦`)}}>Send recommendation ✦</button></> : <><h2>How was Mickey 17?</h2><p>Your rating helps your circle recommend better.</p><label>YOUR OVERALL RATING</label><div className="recipients"><button>6</button><button>7</button><button className="chosen">8</button><button>9</button><button>10</button></div><label>HOW GOOD WAS MAYA’S RECOMMENDATION?</label><button className="rate-choice">Perfect for me ✨</button><button className="rate-choice">Pretty good</button><button className="rate-choice">Not my thing</button><button className="primary wide" onClick={() => {setModal(null);flash("Your rating was saved — Maya will love this.")}}>Save my rating</button></>}</div></div>}
     {toast && <div className="toast">{toast}</div>}
@@ -90,6 +88,51 @@ function AccountControls() {
     <Show when="signed-in"><UserButton appearance={{ elements: { avatarBox: "user-avatar" } }} /></Show>
   </div>;
 }
+function LandingPage() {
+  return <div className="landing">
+    <header className="landing-nav">
+      <a className="landing-brand" href="#top"><i></i>CineApe</a>
+      <nav aria-label="Landing page"><a href="#how-it-works">How it works</a><a href="#why-cineape">Why CineApe</a></nav>
+      <div className="landing-actions"><SignInButton><button className="landing-sign-in">Sign in</button></SignInButton><SignUpButton><button className="landing-join">Join free</button></SignUpButton></div>
+    </header>
+
+    <main id="top">
+      <section className="landing-hero">
+        <div className="landing-copy">
+          <p className="landing-eyebrow">YOUR NEXT FAVORITE IS CLOSER THAN YOU THINK</p>
+          <h1>What should we watch?<br/><em>Ask your people.</em></h1>
+          <p>Discover movies and shows through the friends and family whose taste you actually trust. Save the pick, watch it, then rate how well they know you.</p>
+          <div className="landing-cta"><SignUpButton><button className="landing-join large">Create your free circle <span>→</span></button></SignUpButton><a href="#how-it-works">See how it works <span>↓</span></a></div>
+          <div className="landing-faces"><span><b>MR</b><b>JB</b><b>SK</b><b>+12</b></span><p>Built for the people you watch with</p></div>
+        </div>
+        <div className="landing-showcase" aria-label="CineApe recommendation preview">
+          <div className="landing-glow"></div>
+          <article className="landing-poster landing-poster-a"><PosterImage title="The Bear"/><small>Recommended by Maya</small><strong>THE<br/>BEAR</strong></article>
+          <article className="landing-poster landing-poster-b"><PosterImage title="Mickey 17"/><small>Top pick in your circle</small><strong>MICKEY<br/>17</strong></article>
+          <article className="landing-recommendation"><div><span className="landing-mini-avatar">MR</span><p><b>Maya sent you a pick</b><small>“Funny, weird, and so your kind of show.”</small></p></div><button>See it <span>→</span></button></article>
+        </div>
+      </section>
+
+      <section className="landing-proof"><p>ONE PLACE FOR EVERY “YOU HAVE TO WATCH THIS”</p><div><span>Save it</span><i></i><span>Watch it</span><i></i><span>Rate it</span><i></i><span>Pass it on</span></div></section>
+
+      <section className="landing-features" id="why-cineape">
+        <div className="landing-section-head"><p className="landing-eyebrow">MORE THAN A WATCHLIST</p><h2>Better picks happen<br/>in good company.</h2><p>Every part of CineApe is made to turn “maybe later” into your next shared favorite.</p></div>
+        <div className="feature-stack">
+          <article className="landing-feature review-feature"><span className="feature-number">01</span><div><p className="landing-eyebrow">REVIEW WHAT YOU WATCH</p><h3>Reviews that get to the point.</h3><p>Rate movies and shows in a way that helps your people understand your taste—not just a number out of ten.</p></div><div className="feature-rating"><span>YOUR TAKE</span><strong>8.6</strong><p>Story · Acting · Rewatch</p><i><b></b></i></div></article>
+          <article className="landing-feature recommend-feature"><span className="feature-number">02</span><div><p className="landing-eyebrow">RECOMMEND WITH A NOTE</p><h3>Send the kind of pick they’ll remember.</h3><p>Add your own reason, a heads-up, or an inside joke. They can track it, watch it, and tell you whether you nailed it.</p></div><div className="feature-message"><span className="landing-mini-avatar">JB</span><p><b>John recommends <em>Slow Horses</em></b><small>“Smart spy stuff. Give it two episodes.”</small></p><button>Saved ✓</button></div></article>
+          <article className="landing-feature network-feature"><span className="feature-number">03</span><div><p className="landing-eyebrow">BUILD YOUR CIRCLE</p><h3>Make your network feel like home.</h3><p>Bring together family, friends, movie-night crews, and your favorite group chat—without losing another recommendation.</p></div><div className="feature-network"><div><b>MR</b><b>JB</b><b>SK</b><b>+8</b></div><strong>Sunday Movie Crew</strong><span>14 shared picks this month</span></div></article>
+        </div>
+      </section>
+
+      <section className="landing-how" id="how-it-works"><div><p className="landing-eyebrow">SIMPLE BY DESIGN</p><h2>Find it. Share it.<br/><em>Actually watch it.</em></h2></div><ol><li><b>01</b><div><h3>Start your circle</h3><p>Invite the people whose suggestions you never ignore.</p></div></li><li><b>02</b><div><h3>Send a great pick</h3><p>Recommend a title with the little note that makes it personal.</p></div></li><li><b>03</b><div><h3>See what lands</h3><p>Rate the movie—and how good the recommendation really was.</p></div></li></ol></section>
+
+      <section className="landing-final"><p className="landing-eyebrow">YOUR CIRCLE IS WAITING</p><h2>Make your next<br/>watch a good one.</h2><p>Free to join. Better with friends.</p><SignUpButton><button className="landing-join large">Create your free circle <span>→</span></button></SignUpButton></section>
+    </main>
+    <TmdbAttribution />
+    <footer className="landing-footer"><a className="landing-brand" href="#top"><i></i>CineApe</a><span>Built for better movie nights.</span><a href="https://www.themoviedb.org" target="_blank" rel="noreferrer">Data from TMDB</a></footer>
+  </div>;
+}
+function TmdbAttribution() { return <footer className="tmdb-attribution" aria-label="TMDB attribution"><a href="https://www.themoviedb.org" target="_blank" rel="noreferrer"><img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB" /></a><p>This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.</p></footer>; }
 function Intro({label,title,text,action}:{label:string,title:string,text:string,action:React.ReactNode}) { return <div className="intro"><div><p className="eyebrow">{label}</p><h1>{title}</h1><p>{text}</p></div>{action}</div>; }
 function Tabs({labels}:{labels:string[]}) { const [chosen,setChosen]=useState(0); return <div className="tabs">{labels.map((x,i)=><button onClick={()=>setChosen(i)} className={chosen===i?"chosen":""} key={x}>{x}</button>)}</div>; }
 function MiniRec({title,person,tone,label}:{title:string,person:string,tone:string,label:string}) { return <div className="mini-rec"><span className={`mini-cover ${tone}`}></span><p><b>{title}</b><span><strong>{person}</strong> thinks you’ll love it</span></p><small>{label}</small></div>; }
