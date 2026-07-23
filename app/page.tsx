@@ -45,6 +45,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const flash = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2800); };
   const openTitle = (title = "Mickey 17", meta = "2025 · Science fiction", score = "8.2") => { setSelectedTitle({ title, meta, score }); setPage("Title"); };
   const nav = ["Home", "Discover", "For You", "Friends & Groups", "My Profile"] as Page[];
@@ -65,11 +66,22 @@ export default function Home() {
     return () => { controller.abort(); window.clearTimeout(timer); };
   }, [searchQuery]);
 
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn) return;
+    const token = new URLSearchParams(window.location.search).get("invite");
+    if (!token) return;
+    void fetch("/api/invites", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token }) })
+      .then(response => response.json() as Promise<{ senderName?: string; error?: string }>)
+      .then(result => flash(result.senderName ? `You are now connected with ${result.senderName}.` : result.error ?? "Unable to accept this invite."))
+      .catch(() => flash("Unable to accept this invite."))
+      .finally(() => window.history.replaceState({}, "", window.location.pathname));
+  }, [isLoaded, isSignedIn]);
+
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.username || "CineApe member";
   const firstName = user?.firstName || displayName.split(" ")[0] || "there";
   const initials = displayName.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase();
   const movieCards = (limit = 4) => <div className="cards">{titles.slice(0, limit).map(([title, meta, score, tone]) => <div className="media-card" key={title}><Cover title={title} meta={meta} score={score} tone={tone} onClick={() => openTitle(title, meta, score)}/><strong>{title}</strong><span>Save it to your watchlist</span></div>)}</div>;
-  const recommend = () => <button className="primary" onClick={() => setModal("recommend")}>+ Recommend</button>;
+  const recommend = () => <><button className="secondary header-invite" onClick={() => setInviteOpen(true)}>Invite people</button><button className="primary" onClick={() => setModal("recommend")}>+ Recommend</button></>;
 
   if (!isLoaded) return <div className="session-loading" aria-label="Loading CineApe"><span></span></div>;
   if (!isSignedIn) return <LandingPage />;
@@ -88,14 +100,37 @@ export default function Home() {
 
     {page === "Friends & Groups" && <section className="page"><Intro label="YOUR PEOPLE" title="Better together." text="Share the good stuff with the people you actually watch with." action={<button className="primary" onClick={() => flash("Group creation is ready for the next build step.")}>+ Create a group</button>}/><div className="group-grid"><Group icon="⌂" name="Sunday Movie Crew" info="6 members · Movie night every Sunday"/><Group icon="♧" name="The Bakers" info="5 members · Family favorites" pink/><Group icon="✦" name="Shows worth binging" info="11 members · 32 active picks" green/></div><div className="panel activity"><div className="section-title"><h2>Circle activity</h2><button>See all activity</button></div><Activity who="Maya" initial="MR" text="recommended Last Summer to you." time="Today"/><Activity who="John" initial="JB" text="finished Slow Horses and rated it 9/10." time="Yesterday"/><Activity who="Sarah" initial="SK" text="added The Holdovers to Sunday Movie Crew." time="Mon"/></div></section>}
 
-    {page === "My Profile" && <section className="page"><div className="panel profile-head"><Avatar>SB</Avatar><div><h1>Shawn Baker</h1><p>Drama seeker · 38 ratings · Member since 2025</p></div><div className="profile-stats"><b>87%<span>Circle match</span></b><b>26<span>Recommendations sent</span></b><b>8.4<span>Average rating</span></b></div></div><div className="profile-grid"><div className="panel taste"><h2>Your taste profile</h2><p>Built from what you watch, rate, and save.</p>{[["Drama", "93"], ["Sci-fi", "84"], ["Comedy", "71"], ["Thriller", "67"], ["Horror", "33"]].map(([name, value]) => <div className="bar-row" key={name}><span>{name}</span><i><b style={{width:`${value}%`}}></b></i><strong>{value}</strong></div>)}</div><div className="panel accuracy"><h2>Recommendation accuracy</h2><p>Who knows your taste best?</p><Friend name="Maya Reynolds" initials="MR" match="92%"/><Friend name="John Baker" initials="JB" match="87%" tone="blue-tone"/><Friend name="Sarah Kim" initials="SK" match="81%" tone="rose-tone"/></div></div></section>}
+    {page === "My Profile" && <ProfilePage />}
     </main>
+    {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} />}
     <TmdbAttribution />
     <div className="auth-float"><AccountControls /></div>
     {modal && <div className="backdrop" onClick={() => setModal(null)}><div className="modal" onClick={e => e.stopPropagation()}><button className="close" onClick={() => setModal(null)}>×</button>{modal === "recommend" ? <><h2>Send a recommendation</h2><p>Make it personal. Great picks deserve a note.</p><div className="selected-title"><span></span><b>Mickey 17<small>2025 · Science fiction</small></b></div><label>SEND TO</label><div className="recipients">{["Maya", "John", "Sarah"].map(name => <button className={recipient === name ? "chosen" : ""} key={name} onClick={() => setRecipient(name)}>{name}</button>)}</div><label>ADD A NOTE <small>(optional)</small></label><textarea placeholder="Why will they love it?"></textarea><button className="primary wide" onClick={() => {setModal(null);flash(`Recommendation sent to ${recipient} ✦`)}}>Send recommendation ✦</button></> : <><h2>How was Mickey 17?</h2><p>Your rating helps your circle recommend better.</p><label>YOUR OVERALL RATING</label><div className="recipients"><button>6</button><button>7</button><button className="chosen">8</button><button>9</button><button>10</button></div><label>HOW GOOD WAS MAYA’S RECOMMENDATION?</label><button className="rate-choice">Perfect for me ✨</button><button className="rate-choice">Pretty good</button><button className="rate-choice">Not my thing</button><button className="primary wide" onClick={() => {setModal(null);flash("Your rating was saved — Maya will love this.")}}>Save my rating</button></>}</div></div>}
     {toast && <div className="toast">{toast}</div>}
   </div>;
 }
+function InviteModal({ onClose }: { onClose: () => void }) {
+  const [link, setLink] = useState("");
+  const [message, setMessage] = useState("Creating your private invite link…");
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/invites", { method: "POST" })
+      .then(response => response.ok ? response.json() as Promise<{ token: string }> : response.json().then((data: { error?: string }) => Promise.reject(new Error(data.error ?? "Unable to create an invite."))))
+      .then(data => { if (active) { setLink(`${window.location.origin}/?invite=${data.token}`); setMessage("Anyone with this link can join your Circle. It expires in 7 days."); } })
+      .catch(error => { if (active) setMessage(error instanceof Error ? error.message : "Unable to create an invite."); });
+    return () => { active = false; };
+  }, []);
+
+  const copyLink = async () => {
+    if (!link) return;
+    await navigator.clipboard.writeText(link);
+    setMessage("Invite link copied. Send it by text, Discord, or email.");
+  };
+
+  return <div className="backdrop" onClick={onClose}><div className="modal invite-modal" onClick={event => event.stopPropagation()}><button className="close" onClick={onClose}>×</button><p className="eyebrow">YOUR PRIVATE CIRCLE</p><h2>Invite your people</h2><p>Share one private link with family or friends. New people can create a CineApe account; members who already have one simply sign in and are connected right away.</p><div className="invite-explainer"><b>Already on CineApe?</b><span>Open this link, sign in, and you’re added to the Circle—no second account or separate request needed.</span></div><div className="invite-link">{link || "Preparing your link…"}</div><button className="primary wide" disabled={!link} onClick={() => void copyLink()}>Copy invite link</button><small>{message}</small></div></div>;
+}
+
 function AccountControls() {
   const { isSignedIn } = useUser();
 
@@ -157,6 +192,41 @@ function LandingPage() {
   </div>;
 }
 function TmdbAttribution() { return <footer className="tmdb-attribution" aria-label="TMDB attribution"><a href="https://www.themoviedb.org" target="_blank" rel="noreferrer"><img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB" /></a><p>This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.</p></footer>; }
+type MemberProfile = { displayName: string; avatarUrl: string | null; bio: string | null };
+
+function ProfilePage() {
+  const { user } = useUser();
+  const [profile, setProfile] = useState<MemberProfile | null>(null);
+  const [stats, setStats] = useState({ friends: 0, ratings: 0, sent: 0 });
+  const [editing, setEditing] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      await fetch("/api/account", { method: "POST" });
+      const response = await fetch("/api/account");
+      if (!response.ok || !active) return;
+      const data = await response.json() as { profile: MemberProfile; stats: { friends: number; ratings: number; sent: number } };
+      if (active) { setProfile(data.profile); setStats(data.stats); setDisplayName(data.profile.displayName); setBio(data.profile.bio ?? ""); }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault(); setMessage("Saving…");
+    const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName, bio }) });
+    const data = await response.json() as { profile?: MemberProfile; error?: string };
+    if (!response.ok || !data.profile) { setMessage(data.error ?? "Unable to save your profile."); return; }
+    setProfile(data.profile); setEditing(false); setMessage("Profile saved.");
+  };
+
+  if (!profile) return <section className="page"><div className="panel title-loading">Setting up your profile…</div></section>;
+  const initials = profile.displayName.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase();
+  return <section className="page member-profile"><div className="panel member-profile-head"><Avatar imageUrl={profile.avatarUrl ?? user?.imageUrl}>{initials}</Avatar><div><p className="eyebrow">YOUR CINEAPE PROFILE</p><h1>{profile.displayName}</h1><p>{profile.bio || "Add a short bio so your circle knows what you love to watch."}</p></div><button className="secondary" onClick={() => { setEditing(!editing); setMessage(""); }}> {editing ? "Cancel" : "Edit profile"}</button></div>{editing && <form className="panel profile-editor" onSubmit={save}><label>DISPLAY NAME<input value={displayName} onChange={event => setDisplayName(event.target.value)} maxLength={50}/></label><label>ABOUT YOU <small>Optional · 280 characters</small><textarea value={bio} onChange={event => setBio(event.target.value)} maxLength={280} placeholder="Tell your Circle what you like to watch…"/></label><div><button className="primary" type="submit">Save profile</button>{message && <span>{message}</span>}</div></form>}<div className="profile-stats member-stats"><b>{stats.ratings}<span>Ratings</span></b><b>{stats.friends}<span>Friends</span></b><b>{stats.sent}<span>Recommendations sent</span></b></div><div className="profile-grid member-profile-grid"><article className="panel profile-next"><p className="eyebrow">MAKE IT YOURS</p><h2>Build your taste profile</h2><p>Your profile learns from the movies and shows you rate. Your favorite genres will appear here as your history grows.</p></article><article className="panel profile-next"><p className="eyebrow">YOUR CIRCLE</p><h2>Start with people you trust</h2><p>Invite family and friends to compare ratings and trade recommendations that actually fit.</p></article></div></section>;
+}
 type LiveTitle = { id: number; type: "movie" | "tv"; title: string; overview: string; year: string | null; poster: string | null; tmdbScore: number | null; tmdbVotes: number; runtime: number | null; genres: string[]; trailer: string | null; cast: Array<{ name: string; character: string; image: string | null }>; providers: Array<{ name: string; image: string | null }>; providerLink: string | null };
 type CommunityReview = { score: number; review: string | null; createdAt: string; displayName: string; avatarUrl: string | null };
 

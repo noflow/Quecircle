@@ -14,6 +14,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   displayName: text("display_name").notNull(),
   avatarUrl: text("avatar_url"),
+  bio: text("bio"),
   ...timestamps,
 });
 
@@ -32,6 +33,16 @@ export const friendships = pgTable("friendships", {
   friendId: uuid("friend_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   ...timestamps,
 }, (table) => [primaryKey({ columns: [table.userId, table.friendId] })]);
+
+export const invitations = pgTable("invitations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  token: text("token").notNull().unique(),
+  createdBy: uuid("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  acceptedBy: uuid("accepted_by").references(() => users.id, { onDelete: "set null" }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  ...timestamps,
+});
 
 export const groups = pgTable("groups", {
   id: uuid("id").defaultRandom().primaryKey(),

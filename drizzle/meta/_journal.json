@@ -15,6 +15,20 @@
       "when": 1784816523728,
       "tag": "0001_wealthy_ultron",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1784826263278,
+      "tag": "0002_complete_master_mold",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1784827111241,
+      "tag": "0003_marvelous_overlord",
+      "breakpoints": true
     }
   ]
 }

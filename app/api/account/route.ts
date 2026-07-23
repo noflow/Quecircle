@@ -1,6 +1,14 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
+import { count, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { users } from "../../db/schema";
+import { friendships, recommendations, titleRatings, users } from "../../db/schema";
+
+async function currentMember() {
+  const { userId } = await auth();
+  if (!userId || !db) return null;
+  const [member] = await db.select().from(users).where(eq(users.clerkUserId, userId)).limit(1);
+  return member ?? null;
+}
 
 export async function POST() {
   const { userId } = await auth();
@@ -14,8 +22,31 @@ export async function POST() {
   const displayName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || clerkUser.username || "CineApe member";
   await db.insert(users).values({ clerkUserId: userId, email, displayName, avatarUrl: clerkUser.imageUrl }).onConflictDoUpdate({
     target: users.clerkUserId,
-    set: { email, displayName, avatarUrl: clerkUser.imageUrl, updatedAt: new Date() },
+    set: { email, avatarUrl: clerkUser.imageUrl, updatedAt: new Date() },
   });
-
   return Response.json({ status: "ready" });
+}
+
+export async function GET() {
+  if (!db) return Response.json({ error: "Database is unavailable." }, { status: 503 });
+  const member = await currentMember();
+  if (!member) return Response.json({ error: "Profile not found." }, { status: 404 });
+  const [[friends], [ratings], [sent]] = await Promise.all([
+    db.select({ value: count() }).from(friendships).where(eq(friendships.userId, member.id)),
+    db.select({ value: count() }).from(titleRatings).where(eq(titleRatings.userId, member.id)),
+    db.select({ value: count() }).from(recommendations).where(eq(recommendations.senderId, member.id)),
+  ]);
+  return Response.json({ profile: { displayName: member.displayName, avatarUrl: member.avatarUrl, bio: member.bio }, stats: { friends: friends?.value ?? 0, ratings: ratings?.value ?? 0, sent: sent?.value ?? 0 } });
+}
+
+export async function PATCH(request: Request) {
+  if (!db) return Response.json({ error: "Database is unavailable." }, { status: 503 });
+  const member = await currentMember();
+  if (!member) return Response.json({ error: "Profile not found." }, { status: 404 });
+  const body = await request.json() as { displayName?: string; bio?: string };
+  const displayName = body.displayName?.trim().slice(0, 50);
+  const bio = body.bio?.trim().slice(0, 280) || null;
+  if (!displayName || displayName.length < 2) return Response.json({ error: "Choose a display name with at least two characters." }, { status: 400 });
+  await db.update(users).set({ displayName, bio, updatedAt: new Date() }).where(eq(users.id, member.id));
+  return Response.json({ profile: { displayName, avatarUrl: member.avatarUrl, bio } });
 }
