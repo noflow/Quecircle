@@ -10,6 +10,13 @@ async function currentMember() {
   return member ?? null;
 }
 
+function preferredName(clerkUser: NonNullable<Awaited<ReturnType<typeof currentUser>>>) {
+  const personalName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ");
+  const externalAccount = clerkUser.externalAccounts.find(account => account.username || account.firstName || account.lastName);
+  const providerName = externalAccount ? [externalAccount.firstName, externalAccount.lastName].filter(Boolean).join(" ") || externalAccount.username : "";
+  return personalName || clerkUser.username || providerName || "CineApe member";
+}
+
 export async function POST() {
   const { userId } = await auth();
   if (!userId) return Response.json({ error: "Sign in required." }, { status: 401 });
@@ -19,11 +26,18 @@ export async function POST() {
   const email = clerkUser?.primaryEmailAddress?.emailAddress;
   if (!clerkUser || !email) return Response.json({ error: "An email address is required to create a CineApe profile." }, { status: 400 });
 
-  const displayName = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") || clerkUser.username || "CineApe member";
-  await db.insert(users).values({ clerkUserId: userId, email, displayName, avatarUrl: clerkUser.imageUrl }).onConflictDoUpdate({
-    target: users.clerkUserId,
-    set: { email, avatarUrl: clerkUser.imageUrl, updatedAt: new Date() },
-  });
+  const displayName = preferredName(clerkUser);
+  const existing = await currentMember();
+  if (existing) {
+    await db.update(users).set({
+      email, avatarUrl: clerkUser.imageUrl,
+      // Preserve a name a member chose themselves, while replacing the old generic placeholder.
+      displayName: existing.displayName === "CineApe member" && displayName !== "CineApe member" ? displayName : existing.displayName,
+      updatedAt: new Date(),
+    }).where(eq(users.id, existing.id));
+  } else {
+    await db.insert(users).values({ clerkUserId: userId, email, displayName, avatarUrl: clerkUser.imageUrl });
+  }
   return Response.json({ status: "ready" });
 }
 
