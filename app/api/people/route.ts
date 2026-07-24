@@ -22,8 +22,9 @@ export async function GET(request: Request) {
   const relatedPeople = relatedIds.length ? await db.select({ id: users.id, displayName: users.displayName, username: users.username, avatarUrl: users.avatarUrl, bio: users.bio }).from(users).where(inArray(users.id, relatedIds)) : [];
   const byId = new Map(relatedPeople.map(person => [person.id, person]));
   const requests = pending.filter(row => row.recipientId === member.id && row.status === "pending").map(row => ({ id: row.id, createdAt: row.createdAt, person: byId.get(row.senderId) }));
-  const query = new URL(request.url).searchParams.get("q")?.trim().replace(/^@/, "").toLowerCase() ?? "";
-  const people = query.length >= 2 ? (await db.select({ id: users.id, displayName: users.displayName, username: users.username, avatarUrl: users.avatarUrl, bio: users.bio }).from(users).where(ilike(users.username, `${query}%`)).limit(12)).filter(person => person.id !== member.id && !friendIds.includes(person.id)).map(person => {
+  const query = new URL(request.url).searchParams.get("q")?.trim().toLowerCase() ?? "";
+  const usernameQuery = query.replace(/^@/, "");
+  const people = query.length >= 2 ? (await db.select({ id: users.id, displayName: users.displayName, username: users.username, avatarUrl: users.avatarUrl, bio: users.bio }).from(users).where(or(ilike(users.username, `${usernameQuery}%`), ilike(users.email, `${query}%`))).limit(12)).filter(person => person.id !== member.id && !friendIds.includes(person.id)).map(person => {
     const incoming = pending.find(row => row.senderId === person.id && row.recipientId === member.id && row.status === "pending");
     const outgoing = pending.find(row => row.senderId === member.id && row.recipientId === person.id && row.status === "pending");
     return { ...person, relationship: incoming ? "incoming" : outgoing ? "outgoing" : "none", requestId: incoming?.id ?? null };

@@ -1,5 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, like } from "drizzle-orm";
 import { db } from "../../db";
 import { friendships, groupMembers, groupTitlePicks, groups, notifications, users } from "../../db/schema";
 
@@ -21,6 +21,9 @@ export async function GET() {
   const friends = friendIds.length
     ? await db.select({ id: users.id, displayName: users.displayName, avatarUrl: users.avatarUrl, bio: users.bio }).from(users).where(inArray(users.id, friendIds)).orderBy(users.displayName)
     : [];
+  const unreadChatRows = await db.select({ link: notifications.link }).from(notifications)
+    .where(and(eq(notifications.userId, member.id), eq(notifications.kind, "chat"), isNull(notifications.readAt), like(notifications.link, "chat:friend:%")));
+  const unreadFriendIds = new Set(unreadChatRows.flatMap(row => row.link?.replace("chat:friend:", "") ?? []).filter(id => friendIds.includes(id)));
 
   const memberGroups = await db.select({ id: groups.id, name: groups.name, createdAt: groups.createdAt, createdBy: groups.createdBy })
     .from(groupMembers).innerJoin(groups, eq(groupMembers.groupId, groups.id))
@@ -33,7 +36,7 @@ export async function GET() {
     return [group.id, { memberCount: members?.value ?? 0, pickCount: picks?.value ?? 0 }] as const;
   }));
   const countByGroup = new Map(groupCounts);
-  return Response.json({ friends, groups: memberGroups.map(group => ({ ...group, ...countByGroup.get(group.id), isOwner: group.createdBy === member.id })) });
+  return Response.json({ friends: friends.map(friend => ({ ...friend, unreadMessages: unreadFriendIds.has(friend.id) })), groups: memberGroups.map(group => ({ ...group, ...countByGroup.get(group.id), isOwner: group.createdBy === member.id })) });
 }
 
 export async function POST(request: Request) {
