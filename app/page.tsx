@@ -136,7 +136,7 @@ export default function Home() {
   const displayName = accountDisplayName || clerkDisplayName;
   const firstName = displayName.split(" ")[0] || "there";
   const movieCards = (limit = 4) => <div className="cards">{titles.slice(0, limit).map(([title, meta, score, tone]) => <div className="media-card" key={title}><Cover title={title} meta={meta} score={score} tone={tone} onClick={() => openTitle(title, meta, score)}/><strong>{title}</strong><span>Save it to your watchlist</span></div>)}</div>;
-  const recommend = () => <button className="primary recommend-action" onClick={() => setModal("quickRecommend")}>+ Recommend</button>;
+  const recommend = () => page === "Friends & Groups" ? null : <button className="primary recommend-action" onClick={() => setModal("quickRecommend")}>+ Recommend</button>;
   const chooseShareTitle = (title: ShareTitle, mode: "recommend" | "groupPick") => { setShareTitle(title); setModal(mode); };
 
   if (!isLoaded) return <div className="session-loading" aria-label="Loading CineApe"><span></span></div>;
@@ -193,15 +193,18 @@ function DisplayNameModal({ suggestedUsername, onSaved }: { suggestedUsername: s
     const cleanLastName = lastName.trim().slice(0, 50);
     const cleanUsername = username.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 50);
     const realName = [cleanFirstName, cleanLastName].filter(Boolean).join(" ");
-    const displayName = showUsername ? cleanUsername : realName;
-    if (cleanFirstName.length < 1 || cleanLastName.length < 1) { setMessage("Add your first and last name."); return; }
+    const useUsername = showUsername || !realName;
+    const displayName = useUsername ? cleanUsername : realName;
+    if (!useUsername && (cleanFirstName.length < 1 || cleanLastName.length < 1)) { setMessage("Add your last name, or choose to show your username instead."); return; }
     if (cleanUsername.length < 3) { setMessage("Choose a username with at least three letters, numbers, hyphens, or underscores."); return; }
     setSaving(true);
     setMessage("");
     try {
       if (user) {
-        await user.update({ firstName: cleanFirstName, lastName: cleanLastName });
-        await user.update({ username: cleanUsername });
+        const clerkUpdates: { username: string; firstName?: string; lastName?: string } = { username: cleanUsername };
+        if (cleanFirstName) clerkUpdates.firstName = cleanFirstName;
+        if (cleanLastName) clerkUpdates.lastName = cleanLastName;
+        await user.update(clerkUpdates);
       }
       const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName, username: cleanUsername }) });
       const data = await response.json() as { error?: string; profile?: { displayName?: string } };

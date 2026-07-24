@@ -65,6 +65,10 @@ export async function PATCH(request: Request) {
   const username = body.username?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 50) || member.username;
   const friendListVisible = typeof body.friendListVisible === "boolean" ? body.friendListVisible : member.friendListVisible;
   if (!displayName || displayName.length < 2) return Response.json({ error: "Choose a display name with at least two characters." }, { status: 400 });
+  if (username && username !== member.username) {
+    const [owner] = await db.select({ id: users.id }).from(users).where(eq(users.username, username)).limit(1);
+    if (owner) return Response.json({ error: "That username is already taken. Please try another one." }, { status: 409 });
+  }
   await db.update(users).set({ displayName, username, bio, friendListVisible, updatedAt: new Date() }).where(eq(users.id, member.id));
   // An email sign-up may choose their name immediately after accepting an invite.
   // Keep the inviter's join notification personal instead of leaving the placeholder name there.
