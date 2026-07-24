@@ -27,16 +27,18 @@ export async function POST() {
   if (!clerkUser || !email) return Response.json({ error: "An email address is required to create a CineApe profile." }, { status: 400 });
 
   const displayName = preferredName(clerkUser);
+  const username = clerkUser.username?.trim().toLowerCase() || null;
   const existing = await currentMember();
   if (existing) {
     await db.update(users).set({
       email, avatarUrl: clerkUser.imageUrl,
+      username: username ?? existing.username,
       // Preserve a name a member chose themselves, while replacing the old generic placeholder.
       displayName: existing.displayName === "CineApe member" && displayName !== "CineApe member" ? displayName : existing.displayName,
       updatedAt: new Date(),
     }).where(eq(users.id, existing.id));
   } else {
-    await db.insert(users).values({ clerkUserId: userId, email, displayName, avatarUrl: clerkUser.imageUrl });
+    await db.insert(users).values({ clerkUserId: userId, email, displayName, username, avatarUrl: clerkUser.imageUrl });
   }
   return Response.json({ status: "ready" });
 }
@@ -50,21 +52,23 @@ export async function GET() {
     db.select({ value: count() }).from(titleRatings).where(eq(titleRatings.userId, member.id)),
     db.select({ value: count() }).from(recommendations).where(eq(recommendations.senderId, member.id)),
   ]);
-  return Response.json({ profile: { displayName: member.displayName, avatarUrl: member.avatarUrl, bio: member.bio }, stats: { friends: friends?.value ?? 0, ratings: ratings?.value ?? 0, sent: sent?.value ?? 0 } });
+  return Response.json({ profile: { displayName: member.displayName, username: member.username, avatarUrl: member.avatarUrl, bio: member.bio, friendListVisible: member.friendListVisible }, stats: { friends: friends?.value ?? 0, ratings: ratings?.value ?? 0, sent: sent?.value ?? 0 } });
 }
 
 export async function PATCH(request: Request) {
   if (!db) return Response.json({ error: "Database is unavailable." }, { status: 503 });
   const member = await currentMember();
   if (!member) return Response.json({ error: "Profile not found." }, { status: 404 });
-  const body = await request.json() as { displayName?: string; bio?: string };
+  const body = await request.json() as { displayName?: string; username?: string; bio?: string; friendListVisible?: boolean };
   const displayName = body.displayName?.trim().slice(0, 50);
   const bio = body.bio?.trim().slice(0, 280) || null;
+  const username = body.username?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 50) || member.username;
+  const friendListVisible = typeof body.friendListVisible === "boolean" ? body.friendListVisible : member.friendListVisible;
   if (!displayName || displayName.length < 2) return Response.json({ error: "Choose a display name with at least two characters." }, { status: 400 });
-  await db.update(users).set({ displayName, bio, updatedAt: new Date() }).where(eq(users.id, member.id));
+  await db.update(users).set({ displayName, username, bio, friendListVisible, updatedAt: new Date() }).where(eq(users.id, member.id));
   // An email sign-up may choose their name immediately after accepting an invite.
   // Keep the inviter's join notification personal instead of leaving the placeholder name there.
   await db.update(notifications).set({ message: `${displayName} joined your CineApe circle.`, updatedAt: new Date() })
     .where(eq(notifications.link, `circle-join:${member.id}`));
-  return Response.json({ profile: { displayName, avatarUrl: member.avatarUrl, bio } });
+  return Response.json({ profile: { displayName, username, avatarUrl: member.avatarUrl, bio, friendListVisible } });
 }

@@ -1,4 +1,4 @@
-import { integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -8,7 +8,8 @@ const timestamps = {
 export const titleType = pgEnum("title_type", ["movie", "tv"]);
 export const recommendationStatus = pgEnum("recommendation_status", ["pending", "watching", "watched", "not_interested"]);
 export const libraryStatus = pgEnum("library_status", ["watchlist", "watching", "completed"]);
-export const notificationKind = pgEnum("notification_kind", ["recommendation", "group_join", "streaming", "chat"]);
+export const notificationKind = pgEnum("notification_kind", ["recommendation", "group_join", "streaming", "chat", "friend_request"]);
+export const friendRequestStatus = pgEnum("friend_request_status", ["pending", "accepted", "declined"]);
 export const editorialStatus = pgEnum("editorial_status", ["draft", "published"]);
 export const movieNightStatus = pgEnum("movie_night_status", ["open", "closed"]);
 
@@ -17,8 +18,10 @@ export const users = pgTable("users", {
   clerkUserId: text("clerk_user_id").notNull().unique(),
   email: text("email").notNull().unique(),
   displayName: text("display_name").notNull(),
+  username: text("username").unique(),
   avatarUrl: text("avatar_url"),
   bio: text("bio"),
+  friendListVisible: boolean("friend_list_visible").default(true).notNull(),
   ...timestamps,
 });
 
@@ -44,6 +47,14 @@ export const friendships = pgTable("friendships", {
   friendId: uuid("friend_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   ...timestamps,
 }, (table) => [primaryKey({ columns: [table.userId, table.friendId] })]);
+
+export const friendRequests = pgTable("friend_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  senderId: uuid("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  recipientId: uuid("recipient_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  status: friendRequestStatus("status").default("pending").notNull(),
+  ...timestamps,
+}, (table) => [uniqueIndex("friend_requests_sender_recipient_unique").on(table.senderId, table.recipientId)]);
 
 export const invitations = pgTable("invitations", {
   id: uuid("id").defaultRandom().primaryKey(),
