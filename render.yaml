@@ -4,6 +4,7 @@ services:
     name: quecircle
     plan: starter
     buildCommand: npm ci && npm run build
+    preDeployCommand: npm run db:migrate
     startCommand: npm run start
     healthCheckPath: /
     autoDeploy: true
@@ -11,4 +12,6 @@ services:
       - key: NODE_VERSION
         value: 22
       - key: TMDB_API_READ_ACCESS_TOKEN
+        sync: false
+      - key: ADMIN_EMAILS
         sync: false
