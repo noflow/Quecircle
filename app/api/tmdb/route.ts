@@ -62,6 +62,9 @@ export async function GET(request: Request) {
         url.searchParams.set("sort_by", "popularity.desc");
         url.searchParams.set("with_original_language", "en");
         url.searchParams.set("include_adult", "false");
+        const today = new Date().toISOString().slice(0, 10);
+        const tomorrow = new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString().slice(0, 10);
+        const dateField = endpoint.type === "movie" ? "primary_release_date" : "first_air_date";
         const genreByType = endpoint.type === "movie"
           ? { drama: "18", thriller: "53", comedy: "35", animation: "16", horror: "27", scifi: "878", family: "10751" }
           : { drama: "18", thriller: "9648", comedy: "35", animation: "16", horror: "10765", scifi: "10765", family: "10751", crime: "80", reality: "10764" };
@@ -69,20 +72,31 @@ export async function GET(request: Request) {
         if (genre) url.searchParams.set("with_genres", genre);
         if (category === "new") {
           const date = new Date();
-          date.setFullYear(date.getFullYear() - 1);
-          url.searchParams.set("sort_by", endpoint.type === "movie" ? "primary_release_date.desc" : "first_air_date.desc");
-          url.searchParams.set(endpoint.type === "movie" ? "primary_release_date.gte" : "first_air_date.gte", date.toISOString().slice(0, 10));
+          date.setDate(date.getDate() - 90);
+          url.searchParams.set("sort_by", `${dateField}.desc`);
+          url.searchParams.set(`${dateField}.gte`, date.toISOString().slice(0, 10));
+          url.searchParams.set(`${dateField}.lte`, today);
+        } else if (category === "upcoming") {
+          url.searchParams.set("sort_by", `${dateField}.asc`);
+          url.searchParams.set(`${dateField}.gte`, tomorrow);
+        } else {
+          // Popular and genre browsing should never surface unreleased titles.
+          url.searchParams.set(`${dateField}.lte`, today);
         }
         return { endpoint, response: await fetch(url, { headers, next: { revalidate: 60 * 60 * 6 } }) };
       }));
       if (responses.some(({ response }) => !response.ok)) return Response.json({ titles: [] }, { status: 502 });
       const collections = await Promise.all(responses.map(async ({ endpoint, response }) => { const data = await response.json() as { results?: SearchItem[]; total_pages?: number }; return { type: endpoint.type, items: data.results ?? [], totalPages: data.total_pages ?? page }; }));
-      const titles = collections.flatMap(collection => collection.items.filter(item => item.poster_path && (!item.original_language || item.original_language === "en")).slice(0, 20).map(item => ({
+      const titledResults = collections.flatMap(collection => collection.items.filter(item => item.poster_path && (!item.original_language || item.original_language === "en")).slice(0, 20).map(item => ({
         id: item.id, type: collection.type, title: item.title ?? item.name ?? "Untitled",
         year: item.release_date?.slice(0, 4) ?? item.first_air_date?.slice(0, 4) ?? null,
+        releaseDate: item.release_date ?? item.first_air_date ?? "",
         image: poster(item.poster_path), score: item.vote_average ? item.vote_average.toFixed(1) : "—",
-      }))).sort((a, b) => Number(b.score) - Number(a.score));
-      return Response.json({ titles: titles.slice(0, 24), page, hasMore: collections.some(collection => page < collection.totalPages) }, { headers: { "Cache-Control": "public, max-age=900, s-maxage=21600" } });
+      })));
+      const byDate = category === "new" || category === "upcoming";
+      const sorted = titledResults.sort((a, b) => byDate ? (category === "upcoming" ? a.releaseDate.localeCompare(b.releaseDate) : b.releaseDate.localeCompare(a.releaseDate)) : Number(b.score) - Number(a.score));
+      const titles = sorted.slice(0, 24).map(({ releaseDate: _releaseDate, ...title }) => title);
+      return Response.json({ titles, page, hasMore: collections.some(collection => page < collection.totalPages) }, { headers: { "Cache-Control": "public, max-age=900, s-maxage=21600" } });
     }
     if (person) {
       const searchUrl = new URL(`${API_BASE}/search/person`);

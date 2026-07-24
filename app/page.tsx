@@ -53,6 +53,7 @@ export default function Home() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [accountDisplayName, setAccountDisplayName] = useState<string | null>(null);
   const [needsDisplayName, setNeedsDisplayName] = useState(false);
+  const [discoverResume, setDiscoverResume] = useState<DiscoverResume | null>(null);
   const flash = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2800); };
   const openTitle = (title = "Mickey 17", meta = "2025 · Science fiction", score = "8.2") => { setSelectedTitle({ title, meta, score }); setPage("Title"); };
   const nav = ["Home", "Discover", "For You", "Friends & Groups", "My Profile", ...(isAdmin ? ["Studio" as Page] : [])] as Page[];
@@ -149,7 +150,7 @@ export default function Home() {
 
     {page === "Home" && <section className="page home"><div className="hero onboarding-hero"><div><p className="eyebrow">WELCOME TO CINEAPE, {firstName.toUpperCase()}</p><h1>Your circle starts with one great pick.</h1><p>Catch new releases, see what your Circle is watching, and never lose a good recommendation.</p><button className="light-button" onClick={() => setPage("Discover")}>Discover movies and shows →</button></div><div className="poster-stack"><span className="poster poster-1">YOUR<br/>NEXT</span><span className="poster poster-2">GREAT<br/>PICK</span><span className="poster poster-3">START<br/>HERE</span></div></div><HomeCategories onOpen={openTitle} onInvite={() => setInviteOpen(true)} /></section>}
 
-    {page === "Discover" && <DiscoverPage onOpen={openTitle} />}
+    {page === "Discover" && <DiscoverPage onOpen={openTitle} resume={discoverResume} onSnapshot={setDiscoverResume} />}
 
     {page === "Title" && <TitleDetails selection={selectedTitle} onBack={() => setPage("Discover")} onRecommend={(title) => chooseShareTitle(title, "recommend")} onAddToGroup={(title) => chooseShareTitle(title, "groupPick")}/>} 
 
@@ -166,31 +167,42 @@ export default function Home() {
     <div className="auth-float"><AccountControls /></div>
     {modal === "quickRecommend" && <QuickRecommendModal onClose={() => setModal(null)} onSelected={(title) => { setShareTitle(title); setModal("recommend"); }}/>} {modal === "recommend" && shareTitle && <RecommendationModal title={shareTitle} onClose={() => setModal(null)} onSent={(name) => { setModal(null); flash(`Recommendation sent to ${name} ✦`); }} />}
     {modal === "groupPick" && shareTitle && <GroupPickModal title={shareTitle} onClose={() => setModal(null)} onSaved={(name) => { setModal(null); flash(`Added to ${name}'s shared picks.`); }} />}
-    {needsDisplayName && <DisplayNameModal suggestedName={user?.primaryEmailAddress?.emailAddress?.split("@")[0] ?? ""} onSaved={(name) => { setAccountDisplayName(name); setNeedsDisplayName(false); flash(`Welcome to CineApe, ${name}.`); }} />}
+    {needsDisplayName && <DisplayNameModal suggestedUsername={user?.username ?? user?.primaryEmailAddress?.emailAddress?.split("@")[0] ?? ""} onSaved={(name) => { setAccountDisplayName(name); setNeedsDisplayName(false); flash(`Welcome to CineApe, ${name}.`); }} />}
     {toast && <div className="toast">{toast}</div>}
   </div>;
 }
-function DisplayNameModal({ suggestedName, onSaved }: { suggestedName: string; onSaved: (name: string) => void }) {
-  const [displayName, setDisplayName] = useState(() => suggestedName.replace(/[._-]+/g, " ").trim());
+function DisplayNameModal({ suggestedUsername, onSaved }: { suggestedUsername: string; onSaved: (name: string) => void }) {
+  const { user } = useUser();
+  const [firstName, setFirstName] = useState(() => user?.firstName ?? "");
+  const [lastName, setLastName] = useState(() => user?.lastName ?? "");
+  const [username, setUsername] = useState(() => suggestedUsername.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 50));
+  const [showUsername, setShowUsername] = useState(false);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const realNamePreview = [firstName.trim(), lastName.trim()].filter(Boolean).join(" ");
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
-    const value = displayName.trim();
-    if (value.length < 2) { setMessage("Choose a name with at least two characters."); return; }
+    const cleanFirstName = firstName.trim().slice(0, 50);
+    const cleanLastName = lastName.trim().slice(0, 50);
+    const cleanUsername = username.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 50);
+    const realName = [cleanFirstName, cleanLastName].filter(Boolean).join(" ");
+    const displayName = showUsername ? cleanUsername : realName;
+    if (cleanFirstName.length < 1 || cleanLastName.length < 1) { setMessage("Add your first and last name."); return; }
+    if (cleanUsername.length < 3) { setMessage("Choose a username with at least three letters, numbers, hyphens, or underscores."); return; }
     setSaving(true);
     setMessage("");
     try {
-      const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName: value }) });
+      if (user) await user.update({ firstName: cleanFirstName, lastName: cleanLastName, username: cleanUsername });
+      const response = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ displayName }) });
       const data = await response.json() as { error?: string; profile?: { displayName?: string } };
       if (!response.ok || !data.profile?.displayName) { setMessage(data.error ?? "Your display name could not be saved."); return; }
       onSaved(data.profile.displayName);
-    } catch { setMessage("Your display name could not be saved. Please try again."); }
+    } catch { setMessage("That username is not available. Please choose another one."); }
     finally { setSaving(false); }
   };
 
-  return <div className="backdrop name-backdrop"><form className="modal name-modal" onSubmit={save}><p className="eyebrow">WELCOME TO CINEAPE</p><h2>What should your Circle call you?</h2><p>This is the name your friends and family will see on recommendations, groups, and reviews. You can change it any time in your profile.</p><label>DISPLAY NAME<input value={displayName} onChange={event => setDisplayName(event.target.value)} placeholder="Your name" autoFocus maxLength={50} /></label><button className="primary wide" disabled={saving}>{saving ? "Saving…" : "Save and continue"}</button>{message && <small className="modal-message">{message}</small>}</form></div>;
+  return <div className="backdrop name-backdrop"><form className="modal name-modal" onSubmit={save}><p className="eyebrow">WELCOME TO CINEAPE</p><h2>Set up your CineApe profile</h2><p>Your real name stays on your Clerk account. Choose whether friends see it or your username on CineApe.</p><div className="name-fields"><label>FIRST NAME<input value={firstName} onChange={event => setFirstName(event.target.value)} placeholder="First name" autoFocus maxLength={50}/></label><label>LAST NAME<input value={lastName} onChange={event => setLastName(event.target.value)} placeholder="Last name" maxLength={50}/></label></div><label>USERNAME<input value={username} onChange={event => setUsername(event.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))} placeholder="cinefan" maxLength={50}/><small>Letters, numbers, hyphens, and underscores only.</small></label><label className="display-choice"><input type="checkbox" checked={showUsername} onChange={event => setShowUsername(event.target.checked)}/><span><b>Show my username instead</b><small>{showUsername ? `Friends will see ${username ? `@${username}` : "your username"}.` : `Friends will see ${realNamePreview || "your real name"}.`}</small></span></label><button className="primary wide" disabled={saving}>{saving ? "Saving…" : "Save and continue"}</button>{message && <small className="modal-message">{message}</small>}</form></div>;
 }
 function InviteModal({ onClose }: { onClose: () => void }) {
   const [link, setLink] = useState("");
@@ -447,7 +459,7 @@ function DiscoverPageLegacy({ onOpen }: { onOpen: (title?: string, meta?: string
   return <section className="page live-discover"><Intro label="DISCOVER" title="Find your next obsession." text={subtitle} action={null}/><div className="tabs discover-tabs">{filters.map(item => <button key={item.key} className={filter === item.key ? "chosen" : ""} onClick={() => { setFilter(item.key); setCategory("all"); }}>{item.label}</button>)}</div>{filter !== "all" && <div className="genre-chips" aria-label={`${filter === "movie" ? "Movie" : "TV show"} categories`}>{categories.map(item => <button key={item.key} className={category === item.key ? "chosen" : ""} onClick={() => setCategory(item.key)}>{item.label}</button>)}</div>}{loading ? <div className="panel discover-loading">Finding great titles…</div> : titles.length ? <div className="discover-grid live-discover-grid">{titles.map((title, index) => <article className="media-card" key={`${title.type}-${title.id}`}><button className={`cover ${["a", "b", "c", "d", "e"][index % 5]}`} onClick={() => onOpen(title.title, `${title.year ?? "—"} · ${title.type === "tv" ? "TV series" : "Movie"}`, title.score)}>{title.image && <img src={title.image} alt={`${title.title} poster`} />}<span className="cover-type">{title.type === "tv" ? "TV" : "Movie"}</span><span className="cover-score">★ {title.score}</span><span className="cover-title"><small>{title.year ?? "New release"}</small>{title.title}</span></button><strong>{title.title}</strong><span>{title.type === "tv" ? "TV series" : "Movie"} · TMDB {title.score}</span></article>)}</div> : <div className="panel discover-empty"><b>Live titles are not available just now.</b><p>Try using the search at the top to find a movie, show, actor, or actress.</p></div>}</section>;
 }
 
-function DiscoverPage({ onOpen }: { onOpen: (title?: string, meta?: string, score?: string) => void }) {
+function DiscoverPageWithPaginationLegacy({ onOpen }: { onOpen: (title?: string, meta?: string, score?: string) => void }) {
   const [filter, setFilter] = useState<"all" | "movie" | "tv">("all"); const [category, setCategory] = useState("all"); const [titles, setTitles] = useState<DiscoverTitle[]>([]); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [hasMore, setHasMore] = useState(true); const [nextPage, setNextPage] = useState(2); const sentinel = useRef<HTMLDivElement | null>(null);
   const country = () => navigator.language.split("-")[1]?.toUpperCase() === "CA" ? "CA" : "US";
   const fetchTitles = async (page: number) => { const response = await fetch(`/api/tmdb?mode=discover&type=${filter}&category=${category}&country=${country()}&page=${page}`); return response.ok ? await response.json() as { titles?: DiscoverTitle[]; hasMore?: boolean } : { titles: [], hasMore: false }; };
@@ -458,6 +470,40 @@ function DiscoverPage({ onOpen }: { onOpen: (title?: string, meta?: string, scor
   const categories = filter === "movie" ? [{ key: "all", label: "All movies" }, { key: "new", label: "New releases" }, { key: "drama", label: "Drama" }, { key: "thriller", label: "Thriller" }, { key: "comedy", label: "Comedy" }, { key: "animation", label: "Animation" }, { key: "horror", label: "Horror" }, { key: "scifi", label: "Sci-fi" }, { key: "family", label: "Family" }] : [{ key: "all", label: "All shows" }, { key: "new", label: "New releases" }, { key: "drama", label: "Drama" }, { key: "thriller", label: "Mystery & thriller" }, { key: "comedy", label: "Comedy" }, { key: "animation", label: "Animation" }, { key: "horror", label: "Horror & fantasy" }, { key: "crime", label: "Crime" }, { key: "reality", label: "Reality" }];
   const subtitle = filter === "all" ? "Popular English-language movies and shows for your region." : filter === "movie" ? "Popular English-language movies to save for your next night in." : "Popular English-language series ready for your next binge.";
   return <section className="page live-discover"><Intro label="DISCOVER" title="Find your next obsession." text={subtitle} action={null}/><div className="tabs discover-tabs">{filters.map(item => <button key={item.key} className={filter === item.key ? "chosen" : ""} onClick={() => { setFilter(item.key); setCategory("all"); }}>{item.label}</button>)}</div>{filter !== "all" && <div className="genre-chips" aria-label={`${filter === "movie" ? "Movie" : "TV show"} categories`}>{categories.map(item => <button key={item.key} className={category === item.key ? "chosen" : ""} onClick={() => setCategory(item.key)}>{item.label}</button>)}</div>}{loading ? <div className="panel discover-loading">Finding great titles…</div> : titles.length ? <><div className="discover-grid live-discover-grid">{titles.map((title, index) => <article className="media-card" key={`${title.type}-${title.id}`}><button className={`cover ${["a", "b", "c", "d", "e"][index % 5]}`} onClick={() => onOpen(title.title, `${title.year ?? "—"} · ${title.type === "tv" ? "TV series" : "Movie"}`, title.score)}>{title.image && <img src={title.image} alt={`${title.title} poster`} />}<span className="cover-type">{title.type === "tv" ? "TV" : "Movie"}</span><span className="cover-score">★ {title.score}</span><span className="cover-title"><small>{title.year ?? "New release"}</small>{title.title}</span></button><strong>{title.title}</strong><span>{title.type === "tv" ? "TV series" : "Movie"} · TMDB {title.score}</span></article>)}</div><div className="discover-more" ref={sentinel}>{loadingMore ? "Loading more great picks…" : hasMore ? "Keep scrolling for more" : "You’ve reached the end for now."}</div>{hasMore && !loadingMore && <button className="secondary discover-more-button" onClick={() => void loadMore()}>Load more</button>}</> : <div className="panel discover-empty"><b>Live titles are not available just now.</b><p>Try using the search at the top to find a movie, show, actor, or actress.</p></div>}</section>;
+}
+
+type DiscoverResume = { filter: "all" | "movie" | "tv"; category: string; titles: DiscoverTitle[]; nextPage: number; hasMore: boolean; scrollY: number };
+
+function DiscoverPage({ onOpen, resume, onSnapshot }: { onOpen: (title?: string, meta?: string, score?: string) => void; resume: DiscoverResume | null; onSnapshot: (snapshot: DiscoverResume) => void }) {
+  const [filter, setFilter] = useState<"all" | "movie" | "tv">(() => resume?.filter ?? "all");
+  const [category, setCategory] = useState(() => resume?.category ?? "all");
+  const [titles, setTitles] = useState<DiscoverTitle[]>(() => resume?.titles ?? []);
+  const [loading, setLoading] = useState(() => !resume?.titles.length);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(() => resume?.hasMore ?? true);
+  const [nextPage, setNextPage] = useState(() => resume?.nextPage ?? 2);
+  const [restoring, setRestoring] = useState(() => Boolean(resume?.titles.length));
+  const sentinel = useRef<HTMLDivElement | null>(null);
+  const country = () => navigator.language.split("-")[1]?.toUpperCase() === "CA" ? "CA" : "US";
+  const fetchTitles = async (page: number) => { const response = await fetch(`/api/tmdb?mode=discover&type=${filter}&category=${category}&country=${country()}&page=${page}`); return response.ok ? await response.json() as { titles?: DiscoverTitle[]; hasMore?: boolean } : { titles: [], hasMore: false }; };
+  useEffect(() => {
+    if (restoring) {
+      const frame = window.requestAnimationFrame(() => window.scrollTo(0, resume?.scrollY ?? 0));
+      setRestoring(false);
+      return () => window.cancelAnimationFrame(frame);
+    }
+    let active = true;
+    setLoading(true); setTitles([]); setHasMore(true); setNextPage(2); window.scrollTo(0, 0);
+    void fetchTitles(1).then(data => { if (active) { setTitles(data.titles ?? []); setHasMore(Boolean(data.hasMore)); } }).catch(() => { if (active) { setTitles([]); setHasMore(false); } }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [filter, category]);
+  const loadMore = async () => { if (loading || loadingMore || !hasMore) return; setLoadingMore(true); try { const data = await fetchTitles(nextPage); const more = data.titles ?? []; setTitles(current => { const existing = new Set(current.map(title => `${title.type}-${title.id}`)); return [...current, ...more.filter(title => !existing.has(`${title.type}-${title.id}`))]; }); setHasMore(Boolean(data.hasMore) && more.length > 0); setNextPage(current => current + 1); } catch { setHasMore(false); } finally { setLoadingMore(false); } };
+  useEffect(() => { const node = sentinel.current; if (!node || !hasMore || loading) return; const observer = new IntersectionObserver(entries => { if (entries[0]?.isIntersecting) void loadMore(); }, { rootMargin: "420px" }); observer.observe(node); return () => observer.disconnect(); }, [hasMore, loading, loadingMore, nextPage, titles.length]);
+  const rememberAndOpen = (title: DiscoverTitle) => { onSnapshot({ filter, category, titles, nextPage, hasMore, scrollY: window.scrollY }); onOpen(title.title, `${title.year ?? "—"} · ${title.type === "tv" ? "TV series" : "Movie"}`, title.score); };
+  const filters = [{ key: "all", label: "Popular now" }, { key: "movie", label: "Movies" }, { key: "tv", label: "TV shows" }] as const;
+  const categories = filter === "movie" ? [{ key: "all", label: "All movies" }, { key: "new", label: "New releases" }, { key: "upcoming", label: "Coming soon" }, { key: "drama", label: "Drama" }, { key: "thriller", label: "Thriller" }, { key: "comedy", label: "Comedy" }, { key: "animation", label: "Animation" }, { key: "horror", label: "Horror" }, { key: "scifi", label: "Sci-fi" }, { key: "family", label: "Family" }] : [{ key: "all", label: "All shows" }, { key: "new", label: "New releases" }, { key: "upcoming", label: "Coming soon" }, { key: "drama", label: "Drama" }, { key: "thriller", label: "Mystery & thriller" }, { key: "comedy", label: "Comedy" }, { key: "animation", label: "Animation" }, { key: "horror", label: "Horror & fantasy" }, { key: "crime", label: "Crime" }, { key: "reality", label: "Reality" }];
+  const subtitle = category === "upcoming" ? `Upcoming ${filter === "tv" ? "series" : "movies"} ordered by their nearest release date.` : category === "new" ? `Recently released ${filter === "tv" ? "series" : "movies"} you can look for now.` : filter === "all" ? "Popular English-language movies and shows for your region." : filter === "movie" ? "Popular English-language movies to save for your next night in." : "Popular English-language series ready for your next binge.";
+  return <section className="page live-discover"><Intro label="DISCOVER" title="Find your next obsession." text={subtitle} action={null}/><div className="tabs discover-tabs">{filters.map(item => <button key={item.key} className={filter === item.key ? "chosen" : ""} onClick={() => { setFilter(item.key); setCategory("all"); }}>{item.label}</button>)}</div>{filter !== "all" && <div className="genre-chips" aria-label={`${filter === "movie" ? "Movie" : "TV show"} categories`}>{categories.map(item => <button key={item.key} className={category === item.key ? "chosen" : ""} onClick={() => setCategory(item.key)}>{item.label}</button>)}</div>}{loading ? <div className="panel discover-loading">Finding great titles…</div> : titles.length ? <><div className="discover-grid live-discover-grid">{titles.map((title, index) => <article className="media-card" key={`${title.type}-${title.id}`}><button className={`cover ${["a", "b", "c", "d", "e"][index % 5]}`} onClick={() => rememberAndOpen(title)}>{title.image && <img src={title.image} alt={`${title.title} poster`} />}<span className="cover-type">{title.type === "tv" ? "TV" : "Movie"}</span><span className="cover-score">★ {title.score}</span><span className="cover-title"><small>{title.year ?? "New release"}</small>{title.title}</span></button><strong>{title.title}</strong><span>{title.type === "tv" ? "TV series" : "Movie"} · TMDB {title.score}</span></article>)}</div><div className="discover-more" ref={sentinel}>{loadingMore ? "Loading more great picks…" : hasMore ? "Keep scrolling for more" : "You’ve reached the end for now."}</div>{hasMore && !loadingMore && <button className="secondary discover-more-button" onClick={() => void loadMore()}>Load more</button>}</> : <div className="panel discover-empty"><b>Live titles are not available just now.</b><p>Try using the search at the top to find a movie, show, actor, or actress.</p></div>}</section>;
 }
 
 type CircleFriend = { id: string; displayName: string; avatarUrl: string | null; bio: string | null };
