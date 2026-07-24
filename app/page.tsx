@@ -836,8 +836,22 @@ type Filmography = { id: number; name: string; image: string | null; department:
 
 function TitleDetails({ selection, onBack, onRecommend, onAddToGroup }: { selection: { title: string; meta: string; score: string }; onBack: () => void; onRecommend: (title: ShareTitle) => void; onAddToGroup: (title: ShareTitle) => void }) {
   const [castName, setCastName] = useState<string | null>(null);
-  const onCastClick = (event: React.MouseEvent<HTMLDivElement>) => { const target = event.target instanceof Element ? event.target : null; const card = target?.closest(".cast-grid article"); const name = card?.querySelector("b")?.textContent?.trim(); if (name) setCastName(name); };
-  return <div className="cast-click-zone" onClick={onCastClick}><TitleDetailsLegacy selection={selection} onBack={onBack} onRecommend={onRecommend} onAddToGroup={onAddToGroup}/>{castName && <CastFilmographyModal name={castName} onClose={() => setCastName(null)}/>}</div>;
+  const [mobileTrailer, setMobileTrailer] = useState<string | null>(null);
+  const onTitleClick = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const card = target?.closest(".cast-grid article");
+    const name = card?.querySelector("b")?.textContent?.trim();
+    if (name) { setCastName(name); return; }
+    const poster = target?.closest(".live-poster");
+    if (!poster || !window.matchMedia("(max-width: 620px)").matches) return;
+    const trailer = poster.closest(".live-title-page")?.querySelector<HTMLIFrameElement>(".trailer-frame iframe")?.src;
+    if (trailer) setMobileTrailer(trailer);
+  };
+  return <div className="cast-click-zone" onClick={onTitleClick}><TitleDetailsLegacy selection={selection} onBack={onBack} onRecommend={onRecommend} onAddToGroup={onAddToGroup}/>{castName && <CastFilmographyModal name={castName} onClose={() => setCastName(null)}/>} {mobileTrailer && <MobileTrailerModal src={mobileTrailer} title={selection.title} onClose={() => setMobileTrailer(null)}/>}</div>;
+}
+
+function MobileTrailerModal({ src, title, onClose }: { src: string; title: string; onClose: () => void }) {
+  return <div className="backdrop mobile-trailer-backdrop" onClick={onClose}><div className="mobile-trailer-modal" onClick={event => event.stopPropagation()}><button className="mobile-trailer-close" onClick={onClose} aria-label="Close trailer">×</button><iframe src={src} title={`${title} official trailer`} allowFullScreen autoFocus /></div></div>;
 }
 
 function CastFilmographyModal({ name, onClose }: { name: string; onClose: () => void }) {
