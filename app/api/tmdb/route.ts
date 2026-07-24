@@ -13,6 +13,7 @@ type SearchItem = {
   known_for_department?: string;
   known_for?: Array<{ title?: string; name?: string }>;
   vote_average?: number;
+  original_language?: string;
 };
 
 const poster = (path?: string | null, size = "w500") => path ? `${IMAGE_BASE}/${size}${path}` : null;
@@ -46,14 +47,35 @@ export async function GET(request: Request) {
     }
     if (mode === "discover") {
       const requestedType = params.get("type");
+      const category = params.get("category") ?? "all";
       const headers = { Authorization: `Bearer ${token}`, accept: "application/json" };
-      const endpoints = requestedType === "movie" ? [{ path: "/movie/popular", type: "movie" as const }]
-        : requestedType === "tv" ? [{ path: "/tv/popular", type: "tv" as const }]
-        : [{ path: "/trending/movie/week", type: "movie" as const }, { path: "/trending/tv/week", type: "tv" as const }];
-      const responses = await Promise.all(endpoints.map(async endpoint => ({ endpoint, response: await fetch(`${API_BASE}${endpoint.path}?language=en-US&page=1`, { headers, next: { revalidate: 60 * 60 * 6 } }) })));
+      const endpoints = requestedType === "movie" ? [{ path: "/discover/movie", type: "movie" as const }]
+        : requestedType === "tv" ? [{ path: "/discover/tv", type: "tv" as const }]
+        : [{ path: "/discover/movie", type: "movie" as const }, { path: "/discover/tv", type: "tv" as const }];
+      const responses = await Promise.all(endpoints.map(async endpoint => {
+        const url = new URL(`${API_BASE}${endpoint.path}`);
+        url.searchParams.set("language", "en-US");
+        url.searchParams.set("page", "1");
+        url.searchParams.set("region", country);
+        url.searchParams.set("sort_by", "popularity.desc");
+        url.searchParams.set("with_original_language", "en");
+        url.searchParams.set("include_adult", "false");
+        const genreByType = endpoint.type === "movie"
+          ? { drama: "18", thriller: "53", comedy: "35", animation: "16", horror: "27", scifi: "878", family: "10751" }
+          : { drama: "18", thriller: "9648", comedy: "35", animation: "16", horror: "10765", scifi: "10765", family: "10751", crime: "80", reality: "10764" };
+        const genre = genreByType[category as keyof typeof genreByType];
+        if (genre) url.searchParams.set("with_genres", genre);
+        if (category === "new") {
+          const date = new Date();
+          date.setFullYear(date.getFullYear() - 1);
+          url.searchParams.set("sort_by", endpoint.type === "movie" ? "primary_release_date.desc" : "first_air_date.desc");
+          url.searchParams.set(endpoint.type === "movie" ? "primary_release_date.gte" : "first_air_date.gte", date.toISOString().slice(0, 10));
+        }
+        return { endpoint, response: await fetch(url, { headers, next: { revalidate: 60 * 60 * 6 } }) };
+      }));
       if (responses.some(({ response }) => !response.ok)) return Response.json({ titles: [] }, { status: 502 });
       const collections = await Promise.all(responses.map(async ({ endpoint, response }) => ({ type: endpoint.type, items: (await response.json() as { results?: SearchItem[] }).results ?? [] })));
-      const titles = collections.flatMap(collection => collection.items.filter(item => item.poster_path).slice(0, 20).map(item => ({
+      const titles = collections.flatMap(collection => collection.items.filter(item => item.poster_path && (!item.original_language || item.original_language === "en")).slice(0, 20).map(item => ({
         id: item.id, type: collection.type, title: item.title ?? item.name ?? "Untitled",
         year: item.release_date?.slice(0, 4) ?? item.first_air_date?.slice(0, 4) ?? null,
         image: poster(item.poster_path), score: item.vote_average ? item.vote_average.toFixed(1) : "—",

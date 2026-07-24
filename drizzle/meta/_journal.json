@@ -43,6 +43,13 @@
       "when": 1784834364805,
       "tag": "0005_dashing_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784857134663,
+      "tag": "0006_nappy_paladin",
+      "breakpoints": true
     }
   ]
 }

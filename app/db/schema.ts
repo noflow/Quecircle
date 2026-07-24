@@ -9,6 +9,7 @@ export const titleType = pgEnum("title_type", ["movie", "tv"]);
 export const recommendationStatus = pgEnum("recommendation_status", ["pending", "watching", "watched", "not_interested"]);
 export const libraryStatus = pgEnum("library_status", ["watchlist", "watching", "completed"]);
 export const notificationKind = pgEnum("notification_kind", ["recommendation", "group_join", "streaming"]);
+export const editorialStatus = pgEnum("editorial_status", ["draft", "published"]);
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -109,3 +110,37 @@ export const notifications = pgTable("notifications", {
   readAt: timestamp("read_at", { withTimezone: true }),
   ...timestamps,
 });
+
+export const editorReviews = pgTable("editor_reviews", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  titleId: uuid("title_id").notNull().references(() => titles.id, { onDelete: "cascade" }),
+  authorId: uuid("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  slug: text("slug").notNull().unique(),
+  headline: text("headline").notNull(),
+  body: text("body").notNull(),
+  score: integer("score").notNull(),
+  seoTitle: text("seo_title"),
+  seoDescription: text("seo_description"),
+  status: editorialStatus("status").default("draft").notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  ...timestamps,
+});
+
+export const editorLists = pgTable("editor_lists", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  authorId: uuid("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  slug: text("slug").notNull().unique(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  seoTitle: text("seo_title"),
+  seoDescription: text("seo_description"),
+  status: editorialStatus("status").default("draft").notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  ...timestamps,
+});
+
+export const editorListItems = pgTable("editor_list_items", {
+  listId: uuid("list_id").notNull().references(() => editorLists.id, { onDelete: "cascade" }),
+  titleId: uuid("title_id").notNull().references(() => titles.id, { onDelete: "cascade" }),
+  position: integer("position").notNull(),
+}, (table) => [primaryKey({ columns: [table.listId, table.titleId] })]);

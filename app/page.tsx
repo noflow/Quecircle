@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Show, SignInButton, SignUpButton, UserButton, useUser } from "@clerk/nextjs";
 
-type Page = "Home" | "Discover" | "For You" | "Friends & Groups" | "My Profile" | "Title";
+type Page = "Home" | "Discover" | "For You" | "Friends & Groups" | "My Profile" | "Studio" | "Title";
 type SearchResult = { id: number; type: "movie" | "tv" | "person"; title: string; year: string | null; image: string | null; subtitle: string };
 type ShareTitle = { tmdbId: number; type: "movie" | "tv"; name: string; year: number | null; posterPath: string | null };
 type CircleChoice = { id: string; displayName?: string; avatarUrl?: string | null; name?: string; memberCount?: number; isOwner?: boolean };
@@ -49,9 +49,10 @@ export default function Home() {
   const [searching, setSearching] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const flash = (message: string) => { setToast(message); window.setTimeout(() => setToast(""), 2800); };
   const openTitle = (title = "Mickey 17", meta = "2025 · Science fiction", score = "8.2") => { setSelectedTitle({ title, meta, score }); setPage("Title"); };
-  const nav = ["Home", "Discover", "For You", "Friends & Groups", "My Profile"] as Page[];
+  const nav = ["Home", "Discover", "For You", "Friends & Groups", "My Profile", ...(isAdmin ? ["Studio" as Page] : [])] as Page[];
   const shown = page === "Title" ? "Title" : page;
 
   useEffect(() => {
@@ -80,6 +81,12 @@ export default function Home() {
       .finally(() => window.history.replaceState({}, "", window.location.pathname));
   }, [isLoaded, isSignedIn]);
 
+  useEffect(() => {
+    if (!isSignedIn) { setIsAdmin(false); return; }
+    void fetch("/api/admin").then(response => response.ok ? response.json() as Promise<{ isAdmin?: boolean }> : null)
+      .then(data => setIsAdmin(Boolean(data?.isAdmin))).catch(() => setIsAdmin(false));
+  }, [isSignedIn]);
+
   const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || user?.username || "CineApe member";
   const firstName = user?.firstName || displayName.split(" ")[0] || "there";
   const initials = displayName.split(" ").map(part => part[0]).join("").slice(0, 2).toUpperCase();
@@ -105,6 +112,7 @@ export default function Home() {
     {page === "Friends & Groups" && <CirclePage onInvite={() => setInviteOpen(true)} />}
 
     {page === "My Profile" && <ProfilePage />}
+    {page === "Studio" && isAdmin && <StudioPage />}
     </main>
     {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} />}
     {notificationsOpen && <NotificationPanel onClose={() => setNotificationsOpen(false)} />}
@@ -236,6 +244,14 @@ function LandingPage() {
   </div>;
 }
 function TmdbAttribution() { return <footer className="tmdb-attribution" aria-label="TMDB attribution"><a href="https://www.themoviedb.org" target="_blank" rel="noreferrer"><img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB" /></a><p>This product uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.</p></footer>; }
+type StudioStats = { users: number; friendships: number; groups: number; recommendations: number; ratings: number; editorReviews: number; editorLists: number };
+
+function StudioPage() {
+  const [stats, setStats] = useState<StudioStats | null>(null);
+  useEffect(() => { let active = true; void fetch("/api/admin").then(response => response.ok ? response.json() as Promise<{ stats?: StudioStats | null }> : null).then(data => { if (active) setStats(data?.stats ?? null); }).catch(() => { if (active) setStats(null); }); return () => { active = false; }; }, []);
+  const cards = stats ? [["Members", stats.users], ["Friend links", stats.friendships], ["Groups", stats.groups], ["Recommendations", stats.recommendations], ["Community ratings", stats.ratings], ["Editor reviews", stats.editorReviews], ["Editor lists", stats.editorLists]] : [];
+  return <section className="page studio-page"><Intro label="PRIVATE CINEAPE STUDIO" title="Your publishing and growth center." text="Track your Circle, then create the editor reviews and must-watch lists that bring new people in." action={null}/>{stats ? <><div className="studio-stats">{cards.map(([label, value]) => <article className="panel" key={String(label)}><b>{value}</b><span>{label}</span></article>)}</div><div className="studio-grid"><article className="panel studio-next"><p className="eyebrow">EDITORIAL</p><h2>Official reviews</h2><p>Draft and publish CineApe editor reviews with a score, spoiler-safe copy, and SEO fields.</p><small>Editorial tools are ready for the next Studio screen.</small></article><article className="panel studio-next"><p className="eyebrow">SEO</p><h2>Must-watch lists</h2><p>Build indexable collections such as “Best TV shows to watch tonight” and “CineApe’s must-watch horror.”</p><small>Public review and list URLs are the next publishing step.</small></article></div></> : <div className="panel studio-access"><b>Studio access is not configured yet.</b><p>Add your email to the Render environment setting <code>ADMIN_EMAILS</code>, then reload CineApe.</p></div>}</section>;
+}
 type MemberProfile = { displayName: string; avatarUrl: string | null; bio: string | null };
 
 function ProfilePage() {
@@ -275,21 +291,26 @@ type DiscoverTitle = { id: number; type: "movie" | "tv"; title: string; year: st
 
 function DiscoverPage({ onOpen }: { onOpen: (title?: string, meta?: string, score?: string) => void }) {
   const [filter, setFilter] = useState<"all" | "movie" | "tv">("all");
+  const [category, setCategory] = useState("all");
   const [titles, setTitles] = useState<DiscoverTitle[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
-    void fetch(`/api/tmdb?mode=discover&type=${filter}`).then(response => response.ok ? response.json() as Promise<{ titles?: DiscoverTitle[] }> : null)
+    const country = navigator.language.split("-")[1]?.toUpperCase() === "CA" ? "CA" : "US";
+    void fetch(`/api/tmdb?mode=discover&type=${filter}&category=${category}&country=${country}`).then(response => response.ok ? response.json() as Promise<{ titles?: DiscoverTitle[] }> : null)
       .then(data => { if (active) setTitles(data?.titles ?? []); })
       .catch(() => { if (active) setTitles([]); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [filter]);
+  }, [filter, category]);
 
-  const filters = [{ key: "all", label: "Trending" }, { key: "movie", label: "Movies" }, { key: "tv", label: "TV shows" }] as const;
-  const subtitle = filter === "all" ? "Popular movies and shows worth knowing about right now." : filter === "movie" ? "Popular movies to save for your next night in." : "Popular series ready for your next binge.";
-  return <section className="page live-discover"><Intro label="DISCOVER" title="Find your next obsession." text={subtitle} action={null}/><div className="tabs discover-tabs">{filters.map(item => <button key={item.key} className={filter === item.key ? "chosen" : ""} onClick={() => setFilter(item.key)}>{item.label}</button>)}</div>{loading ? <div className="panel discover-loading">Finding great titles…</div> : titles.length ? <div className="discover-grid live-discover-grid">{titles.map((title, index) => <article className="media-card" key={`${title.type}-${title.id}`}><button className={`cover ${["a", "b", "c", "d", "e"][index % 5]}`} onClick={() => onOpen(title.title, `${title.year ?? "—"} · ${title.type === "tv" ? "TV series" : "Movie"}`, title.score)}>{title.image && <img src={title.image} alt={`${title.title} poster`} />}<span className="cover-type">{title.type === "tv" ? "TV" : "Movie"}</span><span className="cover-score">★ {title.score}</span><span className="cover-title"><small>{title.year ?? "New release"}</small>{title.title}</span></button><strong>{title.title}</strong><span>{title.type === "tv" ? "TV series" : "Movie"} · TMDB {title.score}</span></article>)}</div> : <div className="panel discover-empty"><b>Live titles are not available just now.</b><p>Try using the search at the top to find a movie, show, actor, or actress.</p></div>}</section>;
+  const filters = [{ key: "all", label: "Popular now" }, { key: "movie", label: "Movies" }, { key: "tv", label: "TV shows" }] as const;
+  const categories = filter === "movie"
+    ? [{ key: "all", label: "All movies" }, { key: "new", label: "New releases" }, { key: "drama", label: "Drama" }, { key: "thriller", label: "Thriller" }, { key: "comedy", label: "Comedy" }, { key: "animation", label: "Animation" }, { key: "horror", label: "Horror" }, { key: "scifi", label: "Sci-fi" }, { key: "family", label: "Family" }]
+    : [{ key: "all", label: "All shows" }, { key: "new", label: "New releases" }, { key: "drama", label: "Drama" }, { key: "thriller", label: "Mystery & thriller" }, { key: "comedy", label: "Comedy" }, { key: "animation", label: "Animation" }, { key: "horror", label: "Horror & fantasy" }, { key: "crime", label: "Crime" }, { key: "reality", label: "Reality" }];
+  const subtitle = filter === "all" ? "Popular English-language movies and shows for your region." : filter === "movie" ? "Popular English-language movies to save for your next night in." : "Popular English-language series ready for your next binge.";
+  return <section className="page live-discover"><Intro label="DISCOVER" title="Find your next obsession." text={subtitle} action={null}/><div className="tabs discover-tabs">{filters.map(item => <button key={item.key} className={filter === item.key ? "chosen" : ""} onClick={() => { setFilter(item.key); setCategory("all"); }}>{item.label}</button>)}</div>{filter !== "all" && <div className="genre-chips" aria-label={`${filter === "movie" ? "Movie" : "TV show"} categories`}>{categories.map(item => <button key={item.key} className={category === item.key ? "chosen" : ""} onClick={() => setCategory(item.key)}>{item.label}</button>)}</div>}{loading ? <div className="panel discover-loading">Finding great titles…</div> : titles.length ? <div className="discover-grid live-discover-grid">{titles.map((title, index) => <article className="media-card" key={`${title.type}-${title.id}`}><button className={`cover ${["a", "b", "c", "d", "e"][index % 5]}`} onClick={() => onOpen(title.title, `${title.year ?? "—"} · ${title.type === "tv" ? "TV series" : "Movie"}`, title.score)}>{title.image && <img src={title.image} alt={`${title.title} poster`} />}<span className="cover-type">{title.type === "tv" ? "TV" : "Movie"}</span><span className="cover-score">★ {title.score}</span><span className="cover-title"><small>{title.year ?? "New release"}</small>{title.title}</span></button><strong>{title.title}</strong><span>{title.type === "tv" ? "TV series" : "Movie"} · TMDB {title.score}</span></article>)}</div> : <div className="panel discover-empty"><b>Live titles are not available just now.</b><p>Try using the search at the top to find a movie, show, actor, or actress.</p></div>}</section>;
 }
 
 type CircleFriend = { id: string; displayName: string; avatarUrl: string | null; bio: string | null };
